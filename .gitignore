@@ -13,8 +13,18 @@
 vignettes/*.html
 vignettes/*.pdf
 
+# data
 data/
 data-raw/*.zip
+data-raw/*.csv
+data-raw/*.ff
+*.csv
+*.zip
+*.rds
 
 #install files
 #inst/*
+inst/doc
+
+
+

@@ -1,13 +1,16 @@
-Package: rain.prediction
+Package: kgRainPredictR
 Title: Rain prediction kaggle competition
 Version: 0.0.0.9000
 Authors@R: person("Nicholas", "Potter", email = "potterzot@gmail.com", role = c("aut", "cre"))
 Depends: R (>= 3.2.1)
 License: MIT + file LICENSE
 LazyData: true
-URL: http://github.com/potterzot/kaggle-comps/rain_prediction/
-BugReports: http://github.com/potterzot/kaggle-comps/rain_prediction/issues
-Imports:
+URL: http://github.com/potterzot/kgRainPredictR
+BugReports: http://github.com/potterzot/kgRainPredictR/issues
+Imports: dplyr,
+    ff,
+    xgboost,
+    zoo
 Suggests: knitr,
     rmarkdown,
     testthat

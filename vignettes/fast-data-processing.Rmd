@@ -1,0 +1,136 @@
+---
+title: "Fast Data Processing in R"
+author: "Nicholas Potter"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Sometimes we run into **Medium Data**, data that are too big to be easily used on our computers but still small enough that they *can* be used, with some special tools.
+
+###Data IO
+Reading in raw csv files of larger than 500MB can take some time. And the entire dataset must be stored in memory. There are a few solutions to speed this up, with various trade offs.
+
+####Loadable in Sections
+If the data you need loaded at a given point is small enough to fit in RAM, then `data.table` is a great package. `data.table` includes `fread`, which provides much faster read times, and you can select specific columns rather than the entire data set. 
+
+``` {r eval = FALSE}
+library(data.table)
+#select 100000 rows, just columns 1, 4, and 24
+fread("<data file>", select = c(1,4,4), nrows = 100000)
+```
+
+Combined with **sampling**, you can probably do much of the exploratory analysis without ever loading the full data set. 
+
+####Selectable
+If the data are too big to hold and analyze in RAM, or you want more specific selection criteria than available when reading a file using `fread`, then either flat files or databases work well.
+
+[SQLite](https://sqlite.org/) is a simple free database that is easy to use. Importing a csv file into sqlite is as simple as writing an sqlite script.
+
+```
+.mode csv
+.headers on
+.import "<csv file>" table_name
+```
+
+Then with `dplyr` you can select data from the sqlite database easily:
+
+``` {r eval = FALSE}
+db <- dplyr::src_sqlite("path/to/sqlite_database")
+df < tbl(db, "table_name") %>%
+  filter(tbl, year>2000, income>40000) %>%
+  collect()
+```
+
+This returns just the selected data, while allowing the selection of a specific subset of data. There are numerous SQL database options, and much that you can do with `dplyr`'s interface for selecting, sorting, and summarizing data.
+
+Another option is `ff` and `bit`, which keeps the data in files on the hard drive and allows for much of the same indexing and selecting behavior as `data.frames`. It makes extensive use of chunking. A csv file can be read into ffdf files and saved to an ffdf object by:
+
+``` {r eval = FALSE}
+library(ff)
+test <- read.csv.ffdf(file = "<csv_file>",
+                      first.rows = 10000,
+                      next.rows = 50000)
+
+ffsave(test,
+       file = "<file_name>",
+       compress = TRUE,
+       rootpath = ".")
+```
+
+The data can be indexed and sorted without loading into memory, or read into memory just in sections that you want:
+
+``` {r eval = FALSE}
+ffload("data/test", overwrite = TRUE, rootpath = "data/")
+
+#Randomly sort the data
+N <- dim(test)
+s <- runif(N)
+test1 <- ffdf(test[order(r), c("col1", "col2", "col3")])
+
+#Read ffdf formatted data into memory:
+dat <- test[1:100000, ] #is a data.frame
+
+#Processing can happen in chunks:
+library(bit)
+for (i in chunk(1, N, 10000)) {
+  #Do some processing to the data
+}
+```
+
+###Sampling
+Sampling can be hugely helpful, 
+You can benchmark the selection yourself
+In benchmarks of 
+
+
+Vignettes are long form documentation commonly included in packages. Because they are part of the distribution of the package, they need to be as compact as possible. The `html_vignette` output type provides a custom style sheet (and tweaks some options) to ensure that the resulting html is as small as possible. The `html_vignette` format:
+
+- Never uses retina figures
+- Has a smaller default figure size
+- Uses a custom CSS stylesheet instead of the default Twitter Bootstrap style
+
+## Vignette Info
+
+Note the various macros within the `vignette` section of the metadata block above. These are required in order to instruct R how to build the vignette. Note that you should change the `title` field and the `\VignetteIndexEntry` to match the title of your vignette.
+
+## Styles
+
+The `html_vignette` template includes a basic CSS theme. To override this theme you can specify your own CSS in the document metadata as follows:
+
+    output: 
+      rmarkdown::html_vignette:
+        css: mystyles.css
+
+## Figures
+
+The figure sizes have been customised so that you can easily put two images side-by-side. 
+
+```{r, fig.show='hold'}
+plot(1:10)
+plot(10:1)
+```
+
+You can enable figure captions by `fig_caption: yes` in YAML:
+
+    output:
+      rmarkdown::html_vignette:
+        fig_caption: yes
+
+Then you can use the chunk option `fig.cap = "Your figure caption."` in **knitr**.
+
+## More Examples
+
+You can write math expressions, e.g. $Y = X\beta + \epsilon$, footnotes^[A footnote here.], and tables, e.g. using `knitr::kable()`.
+
+```{r, echo=FALSE, results='asis'}
+knitr::kable(head(mtcars, 10))
+```
+
+Also a quote using `>`:
+
+> "He who gives up [code] safety for [code] speed deserves neither."
+([via](https://twitter.com/hadleywickham/status/504368538874703872))

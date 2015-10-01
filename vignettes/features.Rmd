@@ -1,0 +1,203 @@
+---
+title: "Features"
+author: "Nicholas Potter"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Features}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+``` {r eval = FALSE}
+library(data.table)
+library(ff)
+library(bit)
+library(dplyr)
+library(zoo)
+library(ggplot2)
+library(kgRainPredictR)
+ffload("data/train", overwrite = TRUE, rootpath = "data/")
+```
+
+We can make a whole set of features more easily if we do so one by one, collapsing the data down to the `Id` level and storing it. `radardist_km` and `Expected` don't vary within the hour, so we start by collapsing them to create the training data set.
+``` {r eval = FALSE}
+dat <- data.table(train[,c("Id", "radardist_km", "Expected")])
+
+tr <- dat[,.(
+  records = .N,
+  radardist = max(radardist_km),
+  target = max(Expected),
+  targetNA = max(Expected),
+  targetlg = log1p(max(Expected))
+  ), Id]
+setkey(tr, Id)
+
+tr[target>69]$targetNA <- NA
+tr[target>69]$targetlg <- NA
+
+#sort expected into 30 classes
+classes <- 0:30
+tr <- tr[tr[, .(target30 = nearest_neighbor(targetNA, classes)), Id]]
+
+#Save the training data. We can add more features later
+saveRDS(tr, "data/train_grpd.rds")
+```
+
+Now we can create features as we want them and add them, without ever having the entire training dataset in memory. There are several possible things we could do with Reflectivity (`Ref`). We can take the weighted mean, the max, etc... We can interpolate missing values and smooth them.
+```{r eval = FALSE}
+dat <- data.table(train[,c("Id", "minutes_past", "Ref")])
+
+ref_feat <- dat[, .(mm = sum(time_difference(minutes_past) * Ref, na.rm = T)), Id]
+ref_feat <- dat[, .(
+  dt = mean(time_difference(minutes_past)),
+  ref = sum(time_difference(minutes_past) * Ref, na.rm = T),
+  ref_i = sum(time_difference(minutes_past) * interpolate(Ref), na.rm = T),  
+  ref_s = sum(time_difference(minutes_past) * 
+                smooth(interpolate(Ref)), na.rm = T),
+  mm = sum(time_difference(minutes_past) * Ref, na.rm = T),
+  mm_i = sum(time_difference(minutes_past) *
+               marshall_palmer(interpolate(Ref)), na.rm = T),  
+  mm_s = sum(time_difference(minutes_past) * 
+               marshall_palmer(smooth(interpolate(Ref))), na.rm = T),
+  ref_na = sum(is.na(Ref))
+  ), Id]
+
+#Add the features to the collapsed training dataset
+tr <- tr[ref_feat]
+saveRDS(tr[ref_feat], "data/train_grpd.rds")
+```
+See `inst/xgboost_simple.R` for some examples of using these features in a model.
+
+Create the same features in the testing data
+``` {r eval = FALSE}
+ffload("data/test", overwrite = TRUE, rootpath = "data/")
+dat <- data.table(test[, c("Id", "Ref", "minutes_past", "radardist_km")])
+te <- dat[, .(
+  dt = mean(time_difference(minutes_past)),
+  ref = sum(time_difference(minutes_past) * Ref, na.rm = T),
+  ref_i = sum(time_difference(minutes_past) * interpolate(Ref), na.rm = T),
+  ref_s = sum(time_difference(minutes_past) *
+                smooth(interpolate(Ref)), na.rm = T),
+  mm = sum(time_difference(minutes_past) * Ref, na.rm = T),
+  mm_i = sum(time_difference(minutes_past) *
+               marshall_palmer(interpolate(Ref)), na.rm = T),
+  mm_s = sum(time_difference(minutes_past) *
+               marshall_palmer(smooth(interpolate(Ref))), na.rm = T),
+  records = .N,
+  radardist = max(radardist_km),
+  ref_na = sum(is.na(Ref))
+), Id]
+setkey(te, Id)
+saveRDS(te, "data/test_grpd.rds")
+
+```
+
+#ids <- unique(train[, "Id"])
+#s <- sample(ids, 10000)
+dat <- select_group(train, "Id", s, c("Id", 
+                                      "minutes_past", 
+                                      "Ref"))
+, 
+                                      "radardist_km", 
+                                      "Expected"))
+
+ds <- group_by(dat, Id) %>% 
+  mutate(dt = time_difference(minutes_past),
+         ref_i = interpolate(Ref), 
+         ref_s = smooth(ref_i)) %>%
+  summarize(ex_i = sum(dt * marshall_palmer(ref_i)),
+            ex_s = sum(dt * marshall_palmer(ref_s)),
+            ex_sd = sum(dt * marshall_palmer(ref_s - radardist_km^0.5)),
+            ex = max(Expected),
+            radardist = max(radardist_km)
+            )
+```
+
+Which features have good predictive power? Let's run a random forest...
+``` {r eval = FALSE}
+library(h2o)
+h2o.init(nthreads = -1)
+
+s <- sample(ids, 1000)
+dat <- data.table(select_group(train, "Id", s))
+dat$ExpectedNA <- dat$Expected
+dat$ExpectedNA[dat$Expected>69] <- NA
+
+tr <- dat[, .(
+  target = log1p(max(ExpectedNA)),
+  ref_i = sum(interpolate(Ref)),
+  ref_s = sum(smooth(interpolate(Ref))),
+  mm_i = log1p(sum(time_difference(minutes_past) * marshall_palmer(interpolate(Ref)) , na.rm=T)),
+  mm_s = log1p(sum(time_difference(minutes_past) * marshall_palmer(smooth(interpolate(Ref))) ,na.rm=T))
+  ), Id]
+
+bst <- xgboost(as.matrix(tr[!is.na(target),-target]), 
+               label = as.matrix(tr[!is.na(target),target], ncol = 1), 
+               missing = NA,
+               params = list(
+                 objective = "reg:linear",
+                 eta = .7,
+                 max.depth = 6,
+                 nthread = 2
+               ),
+               nrounds = 5,
+               verbose = 2
+               )
+
+xgb.save(bst, 'models/bst_simple.save')
+
+tr.hex <-as.h2o(tr,destination_frame="train.hex")
+
+
+```
+
+
+
+Vignettes are long form documentation commonly included in packages. Because they are part of the distribution of the package, they need to be as compact as possible. The `html_vignette` output type provides a custom style sheet (and tweaks some options) to ensure that the resulting html is as small as possible. The `html_vignette` format:
+
+- Never uses retina figures
+- Has a smaller default figure size
+- Uses a custom CSS stylesheet instead of the default Twitter Bootstrap style
+
+## Vignette Info
+
+Note the various macros within the `vignette` section of the metadata block above. These are required in order to instruct R how to build the vignette. Note that you should change the `title` field and the `\VignetteIndexEntry` to match the title of your vignette.
+
+## Styles
+
+The `html_vignette` template includes a basic CSS theme. To override this theme you can specify your own CSS in the document metadata as follows:
+
+    output: 
+      rmarkdown::html_vignette:
+        css: mystyles.css
+
+## Figures
+
+The figure sizes have been customised so that you can easily put two images side-by-side. 
+
+```{r, fig.show='hold'}
+plot(1:10)
+plot(10:1)
+```
+
+You can enable figure captions by `fig_caption: yes` in YAML:
+
+    output:
+      rmarkdown::html_vignette:
+        fig_caption: yes
+
+Then you can use the chunk option `fig.cap = "Your figure caption."` in **knitr**.
+
+## More Examples
+
+You can write math expressions, e.g. $Y = X\beta + \epsilon$, footnotes^[A footnote here.], and tables, e.g. using `knitr::kable()`.
+
+```{r, echo=FALSE, results='asis'}
+knitr::kable(head(mtcars, 10))
+```
+
+Also a quote using `>`:
+
+> "He who gives up [code] safety for [code] speed deserves neither."
+([via](https://twitter.com/hadleywickham/status/504368538874703872))

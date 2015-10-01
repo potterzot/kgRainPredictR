@@ -1,0 +1,94 @@
+---
+title: "Rain Prediction"
+author: "Vignette Author"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Rain Prediction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+``` {r eval = FALSE}
+library(ff)
+library(bit)
+library(xgboost)
+library(dplyr)
+library(kgRainPredictR)
+ffload("data/train", overwrite = TRUE, rootpath = "data/")
+
+#Filter NA values for Ref
+N <- nrow(train)
+b_na <- bit(N)
+b_out <- bit(N)
+for (i in chunk(1,N,10000)) {
+  b_na[i] = is.na(train$Ref[i])
+  b_out[i] = (train$Expected[i] > 69)
+}
+df_tr <- as.data.frame(train[, c("Id", "minutes_past", "Ref", "Expected")]) %>% 
+  filter(Expected <= 69) #remove outliers
+
+#TODO: Replace >69 with 69 or look into what should replace with (NA?)
+#TODO: filter out where all Ref for an ID = NA, not all NA though
+```
+
+``` {r eval=FALSE}
+#Collapse by ID and create summary statistics
+df_tr <- group_by(df_tr, Id) %>%
+  summarize(ref_mean = mean(time_difference(minutes_past) * interpolate(Ref), na.rm = TRUE), 
+            Expected = max(Expected))
+
+num_chunks <- 5
+chunk_size <- 10000
+num_chunks <- ceiling(n_ids / chunk_size)
+dat <- list()
+for (i in 1:num_chunks) {
+  b <- bit(N)
+  for (j in chunk(1,N,10000)) b[j] <- df_te$Id[j] %in% ids[1:chunk_size * i]
+  for (j in chunk(1,n_ids, 10000)) df_tr[df_tr$Idids[j],"chunkId"] <- i
+  dat[i] <- as.data.frame(train[!b, c("Id", "Expected")])
+}
+
+
+%>% 
+%>%
+
+labels <- df_tr$Expected
+
+bst <- xgboost(data = as.matrix(df_tr[,c("Id", "ref_mean")]),
+               label = labels, 
+               max.depth = 3, 
+               eta = .7, 
+               nround = 10,
+               objective = "reg:linear",
+               missing = NA,
+               base_score = 0,
+               verbose = 1)
+
+xgb.save(bst, 'bst_no_na.save')
+
+#clean up
+rm(df_tr)
+rm(b)
+rm(labels)
+```
+
+At this point we have a trained model and have saved it to a file. We've also removed our loaded data because we need to make everything available that we can for prediction.
+
+``` {r eval = FALSE}
+#Now load the test data
+ffload("data/test", overwrite = TRUE, rootpath = "data/")
+df_te <- as.data.frame(test[,c("Id", "minutes_past", "Ref")]) %>%
+  group_by(Id) %>%
+  summarize(ref_mean = mean(time_difference(minutes_past) * Ref, na.rm = TRUE))
+
+res <- data.frame(
+  Id = df_te$Id,
+  Expected = predict(bst, as.matrix(df_te), missing = NA)
+)
+
+res <- group_by(res, Id) %>% summarize(Expected = mean(Expected))
+createSubmission(res, "submission.csv")
+
+
+```

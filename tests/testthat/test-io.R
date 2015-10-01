@@ -1,7 +1,7 @@
-library(rain.prediction)
+library(kgRainPredictR)
 context("Data input and output")
 
-file_dir = system.file("tests/testthat/", package = "rain.prediction")
+file_dir = system.file("tests/testthat/", package = "kgRainPredictR")
 
 test_that("createSubmission() creates a submission file in the right format", {
   file_name = paste0(file_dir, "/test-io.csv")

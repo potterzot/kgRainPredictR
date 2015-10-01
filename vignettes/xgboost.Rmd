@@ -1,0 +1,72 @@
+---
+title: "A First Analysis with XGboost"
+author: "Vignette Author"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{A First Analysis with XGboost}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+[`xgboost`](http://www.cran.r-project.org/web/packages/xgboost/index.html) is a fast implementation of gradient boosting. As a first approach we implement a random forest using just the records that have a radar reflectivity measure (`Ref`). The model here is just a linear model of reflectivity, which of course doesn't work very well, but gives an idea of how to set up xgboost.
+
+``` {r eval = FALSE}
+library(ff)
+library(bit)
+library(xgboost)
+library(kgRainPredictR)
+ffload("data/train", overwrite = TRUE, rootpath = "data/")
+
+#Filter NA values for Ref
+N <- dim(train)[1]
+b <- bit(N)
+for (i in chunk(1,N,10000)) {
+  b[i] = is.na(train$Ref[i])
+}
+df_tr <- as.data.frame(train[!b, c("Id", "minutes_past", "Ref", "Expected")]) %>% 
+  filter(Expected <= 69) %>%
+  group_by(Id) %>%
+  summarize(ref_mean = mean(time_difference(minutes_past) * Ref, na.rm = TRUE), 
+            Expected = max(Expected))
+
+
+labels <- df_tr$Expected
+
+bst <- xgboost(data = as.matrix(df_tr[,c("Id", "ref_mean")]),
+               label = labels, 
+               max.depth = 3, 
+               eta = .7, 
+               nround = 10,
+               objective = "reg:linear",
+               missing = NA,
+               base_score = 0,
+               verbose = 1)
+
+xgb.save(bst, 'bst_no_na.save')
+
+#clean up
+rm(df_tr)
+rm(b)
+rm(labels)
+```
+
+At this point we have a trained model and have saved it to a file. We've also removed our loaded data because we need to make everything available that we can for prediction.
+
+``` {r eval = FALSE}
+#Now load the test data
+ffload("data/test", overwrite = TRUE, rootpath = "data/")
+df_te <- as.data.frame(test[,c("Id", "minutes_past", "Ref")]) %>%
+  group_by(Id) %>%
+  summarize(ref_mean = mean(time_difference(minutes_past) * Ref, na.rm = TRUE))
+
+res <- data.frame(
+  Id = df_te$Id,
+  Expected = predict(bst, as.matrix(df_te), missing = NA)
+)
+
+res <- group_by(res, Id) %>% summarize(Expected = mean(Expected))
+createSubmission(res, "submission.csv")
+
+
+```

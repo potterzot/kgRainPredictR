@@ -9,53 +9,52 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+###Installation
+To get up and running for the [rain prediction kaggle competition](https://www.kaggle.com/c/how-much-did-it-rain-ii), you can first install the `kgRainPredictR` package from github, via:
 
-
-
-Vignettes are long form documentation commonly included in packages. Because they are part of the distribution of the package, they need to be as compact as possible. The `html_vignette` output type provides a custom style sheet (and tweaks some options) to ensure that the resulting html is as small as possible. The `html_vignette` format:
-
-- Never uses retina figures
-- Has a smaller default figure size
-- Uses a custom CSS stylesheet instead of the default Twitter Bootstrap style
-
-## Vignette Info
-
-Note the various macros within the `vignette` section of the metadata block above. These are required in order to instruct R how to build the vignette. Note that you should change the `title` field and the `\VignetteIndexEntry` to match the title of your vignette.
-
-## Styles
-
-The `html_vignette` template includes a basic CSS theme. To override this theme you can specify your own CSS in the document metadata as follows:
-
-    output: 
-      rmarkdown::html_vignette:
-        css: mystyles.css
-
-## Figures
-
-The figure sizes have been customised so that you can easily put two images side-by-side. 
-
-```{r, fig.show='hold'}
-plot(1:10)
-plot(10:1)
+```
+devtools::install_github("potterzot/kgRainPredictR")
 ```
 
-You can enable figure captions by `fig_caption: yes` in YAML:
+It might be better though to just clone the git repository, since that will give you easy access to the package directory, data folder, tests, etc... If you do so, then from R studio you may want to build and reload the package by clicking on the button in Rstudio or just issuing `R CMD INSTALL --no-multiarch --with-keep.source kgRainPredictR` from your shell.
 
-    output:
-      rmarkdown::html_vignette:
-        fig_caption: yes
+###Getting/Loading the Data
+you should first download the competition data and save it in a directory. The `data-raw` directory of this repository comes with a utility script to convert the data from zipped csv files to ff files. This is not strictly necessary. ffdf files may provide some speed boost, at least for initial load, but fread will allow for loading only select columns.
 
-Then you can use the chunk option `fig.cap = "Your figure caption."` in **knitr**.
+Once you have it in either csv or ffdf form, you can load it with:
+``` {r eval=FALSE}
+library(ff)
+ffload("data/train", overwrite = TRUE)
+df_train <- list(
+  data = as.data.frame(train[,c("Id", "minutes_past", "radardist_km", "Ref", "Expected")]),
+  labels = as.data.frame(train[,c("Expected")])
+)
 
-## More Examples
-
-You can write math expressions, e.g. $Y = X\beta + \epsilon$, footnotes^[A footnote here.], and tables, e.g. using `knitr::kable()`.
-
-```{r, echo=FALSE, results='asis'}
-knitr::kable(head(mtcars, 10))
 ```
 
-Also a quote using `>`:
+If instead you have csv files, you can use `data.table` and `fread`:
+``` {r eval=FALSE}
+library(data.table)
+df_train <- list(
+  data = fread("data/train.csv", select = c(1,2,4))
+  labels = fread("data/train.csv", select = c(24))
+)
+```
 
-> "He who gives up [code] safety for [code] speed deserves neither."
-([via](https://twitter.com/hadleywickham/status/504368538874703872))
+###Reproducing the Sample Submission
+`kgRainPredictR` includes `marshall_palmer`, a function to reproduce the data in the sample submission file. This calculates the expected rain as a function of the reflectivity, weighted by the time of measure.
+
+``` {r eval=FALSE}
+library(ff)
+library(dplyr)
+library(lazyeval)
+library(kgRainPredictR)
+ffload("data/test", overwrite = TRUE, rootpath = "data/")
+df_test <- as.data.frame(test[,c("Id", "minutes_past", "Ref")])
+
+#get predicted values
+res <- group_by(df_test, Id) %>% summarize(Expected = marshall_palmer(Ref, minutes_past))
+
+#write to submission file
+create_submission(res, "submission.csv")
+```

@@ -1,17 +1,12 @@
 ---
 title: "Notes"
 author: "Nicholas Potter"
-date: "September 26, 2015"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(eval = TRUE, include = TRUE, echo = TRUE)
-```
-
 * Radar measure is related to distance, since the angle changes the farther you are. See e.g. [this image](http://jcsites.juniata.edu/faculty/johnson/projects/hydromet_module/content/topic2_evaluating/images/MULTI.PNG)
 * Ref is not "Radar Reflectivity in km", the units are [dBZ](https://en.wikipedia.org/wiki/DBZ_(meteorology).
-* 
-
+* Expected is the expected amount of rain recorded by the gauge in the last hour in mm. There are a significant number of records that are out of bounds (>69mm)
+* test records without a `Ref` measure are no longer counted toward score, but must still be predicted.
 
 

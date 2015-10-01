@@ -1,57 +1,85 @@
-#' convert zipped csv files to binary RDS.
+#' Calculate the time difference.
 #'
+#' @importFrom zoo na.fil
 #' @export
 #'
-#' @param files list of file names.
-#' @param dir_in directory source files are in.
-#' @param dir_out directory to save rds files in.
-#' @param dir_sep separator to join file names to directories.
-#' @param chunks number of chunks to split the text file into while converting.
-#' @param headers logical indicating csv has headers.
-#' @param compression type of compression to use or FALSE if none.
-#' @param ... arguments passed to \code{read.csv()}
-#' @return TRUE
-zip2rds <- function(files, dir_in, dir_out,
-                    dir_sep="/",
-                    chunks = 20,
-                    headers = TRUE,
-                    compression = c("gzip"),
-                    ...) {
-  if (chunks > 26) stop("chunks cannot currently be more than 26.")
-  if (missing(dir_out)) dir_out <- dir_in
-  if (!is.logical(compression)) compression <- match.arg(compression)
-
-  alpha <- strsplit("abcdefghijklmnopqrstuvwxyz", "")[[1]]
-
-  file_names <- lapply(files, function(x) { strsplit(x, "\\.")[[1]][1] })
-
-  wd = getwd()
-  setwd(dir_in)
-
-  for (f in file_names) {
-    zip_name = paste(dir_in, paste0(f, ".zip"), sep = dir_sep)
-    csv_name = paste(dir_in, paste0(f, ".csv"), sep = dir_sep)
-    rds_name = paste(dir_out, paste0(f, ".rds"), sep = dir_sep)
-
-    system(paste0("unzip ", zip_name))
-
-    #open a connection
-    if (compression == "gzip") con = gzfile(rds_name, 'wb')
-    else con = file(rds_name, 'wb')
-
-    #loop through split of file
-    system(paste0("split ", csv_name, " -n 20"))
-    for (chunk in alpha[1:chunks]) {
-      chunk_name = paste(dir_in, paste0("xa", chunk), sep=dir_sep)
-      if (chunk == "a") headers = headers
-      else headers = FALSE
-      d = read.csv(chunk_name, header=headers, ...)
-      saveRDS(d, con)
-      file.remove(chunk_name)
-    }
-    file.remove(csv_name)
-    close(con)
-  }
-  setwd(wd)
-  invisible(TRUE)
+#' @param times vector of times to be calculated.
+#' @param num_per_segment number of time steps per segment (e.g. 60 minutes
+#' per hour)
+#' @return vector of time differences, weighted to span the entire segment.
+time_difference <- function(times, num_per_segment = 60) {
+  n <- length(times)
+  valid_time <- vector(mode="numeric", length = n)
+  valid_time[1] <- times[1]
+  valid_time[-1] <- diff(times, 1)
+  valid_time[n] <- valid_time[n] + num_per_segment - sum(valid_time)
+  valid_time <- valid_time / num_per_segment
+  valid_time
 }
+
+#' Interpolate
+#'
+#' A wrapper around zoo::na.fill to interpolate without errors.
+#' @importFrom zoo na.fill
+#' @export
+#' @param v a vector of data
+#'
+interpolate <- function(v, fill = "extend", ...) {
+  n <- length(v)
+  nna <- n - sum(is.na(v))
+  if (nna == 1) res <- rep(sum(v, na.rm = T), n)
+  else if (nna == 0) res <- rep(0, n) #rep(NA, n)
+  else res <- na.fill(v, fill, ...)
+  res
+}
+
+
+#' Select a group of ids from a large data file.
+#'
+#' @importFrom bit chunk bit
+#' @export
+#'
+#' @param dat the data.
+#' @param group_var the group variable.
+#' @param s vector of group identifiers to be selected.
+#' @param columns the columns to return, or NULL for all.
+#' @param num_chunks number of chunks to use.
+#' @param chunk_size number of rows in each chunk. Overridden by \code{num_chunks}
+#' @return selected data.
+select_group <- function(dat, group_var, s, columns, num_chunks,
+                         chunk_size = 10000) {
+  if (missing(columns)) columns <- names(dat)
+
+  N <- dim(dat)[1]
+  b <- bit(N)
+  if (!missing(num_chunks)) chunk_size <- N / num_chunks
+  for (i in chunk(1,N,chunk_size)) {
+    b[i] <- (dat[i, group_var] %in% s)
+  }
+  dat[b, columns]
+}
+
+#' Calculate mm/hr from dbz with Marshall Palmer equation.
+#'
+#' @export
+#' @param dbz reflectivity as measured by dbz
+#' @return estimated rainfall in mm/hr.
+marshall_palmer <- function(dbz) {
+  ((10**(dbz/10))/200) ** 0.625
+}
+
+#' Nearest neighbor of a value.
+#'
+#' @export
+#' @param v the value
+#' @param n the neighbors
+#' @return the value of the nearest neighbor.
+nearest_neighbor <- function(v, n) {
+  lapply(v, function(x) {
+    if (is.na(v)) res <- NA
+    else res <- n[which.min(abs(n - v))]
+    res
+  })
+}
+
+
