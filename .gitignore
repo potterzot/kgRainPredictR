@@ -26,5 +26,6 @@ data-raw/*.ff
 #inst/*
 inst/doc
 
-
+#Don't include models
+inst/
 
