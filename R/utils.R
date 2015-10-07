@@ -1,6 +1,52 @@
+#' Sample the data repeatedly and analyze.
+#'
+#' @export
+#'
+#' @param x the vector or data frame to sample.
+#' @return results of analysis
+sample_test <- function(x, id_var, target_var, FUN, ...,
+                        nrounds = 1, sample_percent = .75) {
+  N <- nrow(x)
+  sample_size = floor(sample_percent * N)
+  ids <- as.matrix(x[, id_var, with = FALSE])
+
+  err = array(dim = nrounds)
+  for (i in 1:nrounds) {
+    s_tr <- sort(sample(ids, sample_size))
+    b <- rep(FALSE, N)
+    b[which(ids %in% s_tr)] <- TRUE
+    m <- FUN(data = subset(x$Id, b), ...)
+    res <- data.frame(
+      pred = predict(object = m, newdata = x[!b]),
+      actual = x[!b, target_var, with = FALSE]
+    )
+    err[i] = res$actual - res$pred
+  }
+  err
+}
+
+
+#' Adjust the target values to account for various factors.
+#'
+#' Attempts to adjust for various limitations with the target data. These
+#' include: (1) guage resolution is likely 0.1mm or less, (2) values over 69 are
+#' extremely unlikely, etc...
+#'
+#' @export
+#'
+#' @param orig vector of original values.
+#' @param resolution the resolution of the measuring device.
+#' @param v_max the maximum allowable value of the device.
+#' @return the adjusted values.
+#'
+adjust_target <- function(orig, resolution = -1.25, v_max = 69) {
+  if (!is.null(v_max)) orig[orig>v_max] <- NA
+  round(orig/resolution)*resolution
+}
+
 #' Calculate the time difference.
 #'
-#' @importFrom zoo na.fil
+#' @importFrom zoo na.fill
 #' @export
 #'
 #' @param times vector of times to be calculated.
