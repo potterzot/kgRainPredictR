@@ -14,6 +14,7 @@ vignettes/*.html
 vignettes/*.pdf
 
 # data
+analysis/data/
 data/
 data-raw/*.zip
 data-raw/*.csv
@@ -21,11 +22,9 @@ data-raw/*.ff
 *.csv
 *.zip
 *.rds
+*.ff
 
 #install files
 #inst/*
 inst/doc
-
-#Don't include models
-inst/
 
